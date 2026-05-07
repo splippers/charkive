@@ -27,3 +27,6 @@ Thumbs.db
 .env
 .env.*
 !.env.example
+
+# Local Charkive state beside a SAN root
+.charkive/charkive.db
