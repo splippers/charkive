@@ -16,9 +16,13 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+web = ["fastapi>=0.110", "uvicorn>=0.29", "jinja2>=3.1"]
 
 [project.scripts]
 charkive = "charkive.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+charkive = ["web/templates/*", "web/static/*"]

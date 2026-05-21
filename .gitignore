@@ -30,3 +30,9 @@ Thumbs.db
 
 # Local Charkive state beside a SAN root
 .charkive/charkive.db
+
+# Local rolling log (FLINTNEEDLE / CSOP); not committed
+TRANSCRIPT.md
+
+# Runtime status artifact
+.project-status

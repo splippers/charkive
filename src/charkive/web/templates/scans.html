@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Scans{% endblock %}
+{% block heading %}Scan History{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <span>All Scans</span>
+    <button class="btn btn-sm btn-primary" onclick="runScan()">&#x21bb; New Scan</button>
+  </div>
+  <div class="card-body" id="scans-list">
+    <div class="spinner"></div>
+  </div>
+</div>
+{% endblock %}

@@ -252,6 +252,23 @@ def sanitor_placeholder():
     typer.echo("`charkive sanitor --daemon` Nigel amp not shipped in scaffold — cron/systemd wrappers only.")
 
 
+@app.command()
+def web(
+    host: Annotated[str, typer.Option("--host", help="Bind address")] = "127.0.0.1",
+    port: Annotated[int, typer.Option("--port", "-p", help="Listen port")] = 8080,
+    cfg_path: Annotated[
+        Path | None,
+        typer.Option("--config", exists=True, dir_okay=False, help=".charkive.yml path"),
+    ] = None,
+):
+    """Launch the Charkive web dashboard."""
+    from charkive.webapp import start_web_server
+
+    typer.secho(f"Charkive Web — http://{host}:{port}", fg=typer.colors.GREEN)
+    typer.echo("Press Ctrl+C to stop.")
+    start_web_server(host=host, port=port, config_path=str(cfg_path) if cfg_path else None)
+
+
 def main() -> None:
     """Console script entry."""
 

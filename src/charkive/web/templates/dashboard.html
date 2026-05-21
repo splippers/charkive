@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block heading %}Dashboard{% endblock %}
+{% block content %}
+<div class="overview-grid" id="overview-grid">
+  <div class="card scan-card">
+    <div class="card-header">Latest Scan</div>
+    <div class="card-body" id="latest-scan">
+      <div class="spinner"></div>
+    </div>
+    <div class="card-actions">
+      <button class="btn btn-primary" id="btn-scan" onclick="runScan()">&#x21bb; Run Scan</button>
+      <button class="btn btn-outline" id="btn-view-scans" onclick="location.href='/scans'">View All Scans</button>
+    </div>
+  </div>
+
+  <div class="card tier-card">
+    <div class="card-header">Fluff by Tier</div>
+    <div class="card-body" id="tier-breakdown">
+      <div class="spinner"></div>
+    </div>
+  </div>
+
+  <div class="card status-card">
+    <div class="card-header">Protection Status</div>
+    <div class="card-body" id="protection-status">
+      <div class="spinner"></div>
+    </div>
+  </div>
+
+  <div class="card config-card">
+    <div class="card-header">Config</div>
+    <div class="card-body" id="config-summary">
+      <div class="spinner"></div>
+    </div>
+  </div>
+</div>
+
+<div class="card" style="margin-top: 1.5rem;">
+  <div class="card-header">Recent Artifacts</div>
+  <div class="card-body" id="recent-artifacts">
+    <div class="spinner"></div>
+  </div>
+</div>
+{% endblock %}

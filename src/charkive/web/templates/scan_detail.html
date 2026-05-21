@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}Scan #{{ scan_id }}{% endblock %}
+{% block heading %}Scan #{{ scan_id }}{% endblock %}
+{% block content %}
+<div class="scan-detail" data-scan-id="{{ scan_id }}">
+  <div class="overview-grid">
+    <div class="card scan-meta-card">
+      <div class="card-header">Metadata</div>
+      <div class="card-body" id="scan-meta"><div class="spinner"></div></div>
+    </div>
+    <div class="card scan-summary-card">
+      <div class="card-header">Summary</div>
+      <div class="card-body" id="scan-summary"><div class="spinner"></div></div>
+    </div>
+  </div>
+
+  <div class="card" style="margin-top: 1.5rem;">
+    <div class="card-header">
+      <span>Artifacts</span>
+      <div class="filter-group">
+        <select id="filter-status" onchange="loadArtifacts()">
+          <option value="">All statuses</option>
+          <option value="protect">Protected</option>
+          <option value="candidate">Candidate</option>
+          <option value="review">Review</option>
+          <option value="quarantined">Quarantined</option>
+        </select>
+        <select id="filter-tier" onchange="loadArtifacts()">
+          <option value="">All tiers</option>
+          <option value="shyte">Shyte</option>
+          <option value="kiloshyte">Kiloshyte</option>
+          <option value="megashyte">Megashyte</option>
+          <option value="gigashyte">Gigashyte</option>
+        </select>
+        <input type="text" id="filter-search" placeholder="Search path..." oninput="debounceSearch()">
+      </div>
+    </div>
+    <div class="card-body" id="artifacts-table">
+      <div class="spinner"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+  window.scanId = {{ scan_id }};
+</script>
+{% endblock %}

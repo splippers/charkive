@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Config{% endblock %}
+{% block heading %}Configuration{% endblock %}
+{% block content %}
+<div class="overview-grid">
+  <div class="card config-display-card">
+    <div class="card-header">
+      <span>Settings</span>
+      <button class="btn btn-sm btn-outline" onclick="reloadConfig()">&#x21bb; Reload</button>
+    </div>
+    <div class="card-body" id="config-settings">
+      <div class="spinner"></div>
+    </div>
+  </div>
+
+  <div class="card config-raw-card">
+    <div class="card-header">Raw .charkive.yml</div>
+    <div class="card-body" id="config-raw">
+      <div class="spinner"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}

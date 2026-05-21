@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Charkive &mdash; {% block title %}Dashboard{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="sidebar-brand">
+      <span class="brand-icon">&#x1F525;</span>
+      <span class="brand-text">Charkive</span>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="/dashboard" class="nav-item {% if active_page == 'dashboard' %}active{% endif %}">
+        <span class="nav-icon">&#x2302;</span> Dashboard
+      </a>
+      <a href="/scans" class="nav-item {% if active_page == 'scans' %}active{% endif %}">
+        <span class="nav-icon">&#x2630;</span> Scans
+      </a>
+      <a href="/sanitorium" class="nav-item {% if active_page == 'sanitorium' %}active{% endif %}">
+        <span class="nav-icon">&#x2691;</span> Sanitorium
+      </a>
+      <a href="/config" class="nav-item {% if active_page == 'config' %}active{% endif %}">
+        <span class="nav-icon">&#x2699;</span> Config
+      </a>
+    </nav>
+    <div class="sidebar-footer">
+      <span class="version">v1.0.0</span>
+      <span class="tagline">All tiers go to 11</span>
+    </div>
+  </aside>
+
+  <main class="main">
+    <header class="main-header">
+      <h1>{% block heading %}Dashboard{% endblock %}</h1>
+      <div class="header-status" id="header-status">
+        <span class="status-dot" id="status-dot"></span>
+        <span id="status-text">Loading...</span>
+      </div>
+    </header>
+    <div class="content">
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="/static/app.js"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>
