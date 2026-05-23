@@ -376,9 +376,79 @@ charkive init /SANDIEGO
 Charkive refuses to scan raw bricks. This would cause split-brain.
 Error: Aborting before your archive becomes Spinal Tap's drummer.
 
+10. SANDIEGO ARCHAEOLOGY: Backup Dig & Cross-Backup Dedup
+Target: /mnt/SANDIEGO/Archive/ — old system images, USB stick dumps, family media spread across backup generations.
+
+The Archive is 178G and consists of multiple generations of backup dumps that contain overlapping content. Unlike media render caches (which are ephemeral), Archive cruft is historical — old laptop backups, USB stick contents, full Windows user profiles. The goal is to surface duplicates across backup lineages so Jon can decide what to keep and what to char.
+
+Real-world Archive profile (2026-05-23):
+- BACK/ (87G): Old USB stick dumps — Videos (27G), DAD'S BACKUP (27G), Rachael Davis (8.9G), ACER290 laptop (6.3G), My Documents (4.4G), RAEJON+MP3s (4.3G), OLDXP (2.3G), more
+- charm-1TB/ (54G): Full Windows user profile for a machine called "charm" — Desktop (26G), Music (14G), Apple/ (10G), AppData (2.4G), Pictures (2.2G)
+- OLDSYSTEM/ (18G): Old home directory backup
+- Music/ (8G): MP3 collection (also present in other backup dirs)
+- OLD DVDs FROM PREHISTORY/ (8.7G): DVD rips circa 2003
+- TM290/ (2.4G): ThinkPad system backup
+- jmd/ (89M), SERV101/ (64M): Old profiles
+
+Safe-to-Archive categories:
+1. Full system images / user profiles: Entire Desktop folders, AppData, full Music trees duplicated across BACK/, charm-1TB/, OLDSYSTEM/ — identify by partial hash, flag for review
+2. USB stick snowflakes: Each BACK/ subdir is a unique USB stick dump — unique files (e.g. a single photo only on one stick) belong in a consolidated archive; duplicates across sticks should be deduped
+3. Ancient ISOs: Custom_HBCD15_1.iso, UBCD310.iso, HB CD 13.iso — probably obsolete (2005-era tools), flag age + check if still relevant
+4. Old OS roots: SERV101/ (bin/dev/etc/lib), TM290/ (home), OLDSYSTEM/ (home) — full Linux filesystem backups from defunct hardware
+
+Config:
+sanity_rules:
+    - name: archive_dup_cross_backup
+    tier: kiloshyte
+    match: "/Archive/**"
+    dedup_scope: cross_backup     # compare files across BACK/, charm-1TB/, OLDSYSTEM/, TM290/
+    hash_partial: true
+    action: flag_for_review
+    risk: medium
+    - name: archive_ancient_iso
+    tier: kiloshyte
+    match: "*.iso"
+    match_path: "/Archive/**"
+    age_days: 3650
+    action: flag
+    - name: archive_os_root
+    tier: megashyte
+    match_path: "/Archive/**/home/**"
+    age_days: 3650
+    action: flag_for_review
+    - name: archive_system_profile
+    tier: megashyte
+    match_path: ["**/Desktop/**", "**/AppData/**", "**/NTUSER.DAT*"]
+    match_path_archive: "/Archive/**"
+    action: flag_system_profile
+
+CLI:
+charkive archaeology               # scan Archive for cross-backup dupes
+charkive archaeology --dig BACK    # deep-dig a single backup dir
+charkive archaeology --report      # generate a digestible report of what overlaps where
+charkive archaeological_find <sha1> # find all copies of a given file across Archive
+
+Architecture:
+The Archive contains same-inode hardlinks — top-level dirs (BACK/, charm-1TB/, Music/, etc.) are the SAME inodes as those inside Archive/. Charkive must detect and report this, not double-count.
+
+Report format:
+Charkive Archaeological Dig: /mnt/SANDIEGO/Archive
+┌──────────────────────────────┬────────────┬─────────────────┐
+│ Backup Set                    │ Size       │ Unique Content  │
+├──────────────────────────────┼────────────┼─────────────────┤
+│ BACK/                         │ 87G        │ 52G (estimate)  │
+│ charm-1TB/                    │ 54G        │ 41G             │
+│ OLDSYSTEM/                    │ 18G        │ 18G             │
+│ Music/                        │ 8G         │ 1.2G            │
+│ ...                           │            │                 │
+├──────────────────────────────┼────────────┼─────────────────┤
+│ Overlap:                      │            │ ~47G            │
+└──────────────────────────────┴────────────┴─────────────────┘
+
 TL;DR
 - Charkive burns fluff, keeps masters. SANitorium quarantines. SANity checks safety.
 - Shyte tiers: Shyte/Kiloshyte/Megashyte/Gigashyte. Confirm phrases for 10 and 11.
 - MARVIN-SANDIEGO: Sandboxed at /mnt/MARVIN-SANDIEGO. Never scan /SANDIEGO brick.
 - Gluster: Works via FUSE. Add heal/quorum/split-brain preflight. Brick jail mandatory.
+- Archive Archaeology: Cross-backup dedup for /mnt/SANDIEGO/Archive/ — identify duplicates across old backup generations, flag system profiles, surface what's unique vs duplicated.
 - Tagline: None more black. All tiers go to 11. Restore SANity. [1][5][10][11]
