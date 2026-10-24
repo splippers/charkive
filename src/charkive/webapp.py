@@ -15,7 +15,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from charkive import db as ckdb
-from charkive import sanitorium, sandwich
+from charkive import curation, sanitorium, sandwich
 from charkive import sanity as sanity_runner
 from charkive.config import load_config, BrickCfg, CharkiveConfig
 
@@ -130,6 +130,11 @@ async def scan_detail_page(scan_id: int):
 @app.get("/sanitorium", response_class=HTMLResponse)
 async def sanitorium_page():
     return HTMLResponse(_render("sanitorium.html", active_page="sanitorium"))
+
+
+@app.get("/curation", response_class=HTMLResponse)
+async def curation_page():
+    return HTMLResponse(_render("curation.html", active_page="curation"))
 
 
 @app.get("/config", response_class=HTMLResponse)
@@ -378,6 +383,8 @@ async def api_sanitise(payload: dict[str, Any]):
     cfg = _get_config()
     tier = payload.get("tier")
     dry_run = payload.get("dry_run", True)
+    if not dry_run:
+        _forbid_if_readonly()
     conn = ckdb.connect(cfg.state_db_path())
     latest = ckdb.latest_scan(conn)
     if not latest:
@@ -403,6 +410,7 @@ async def api_sanitise(payload: dict[str, Any]):
 @app.post("/api/quench")
 async def api_quench(payload: dict[str, Any]):
     cfg = _get_config()
+    _forbid_if_readonly()
     rel_path = payload.get("path", "")
     if not rel_path:
         raise HTTPException(status_code=400, detail="Missing 'path'")
@@ -441,6 +449,47 @@ async def api_config():
 async def api_config_reload():
     _reload_config()
     return {"status": "reloaded"}
+
+
+def _forbid_if_readonly() -> None:
+    """CHARKIVE_READONLY=1 blocks every call that moves files (sanitise for real, quench)."""
+    if os.environ.get("CHARKIVE_READONLY"):
+        raise HTTPException(status_code=403, detail="Charkive is running read-only (CHARKIVE_READONLY)")
+
+
+_CURATION_PROGRESS: dict[str, Any] = {"running": False, "message": ""}
+
+
+@app.post("/api/curation/run")
+async def api_curation_run():
+    cfg = _get_config()
+    if _CURATION_PROGRESS["running"]:
+        raise HTTPException(status_code=409, detail="Curation already running")
+
+    def _run():
+        _CURATION_PROGRESS["running"] = True
+        try:
+            def note(m: str) -> None:
+                _CURATION_PROGRESS["message"] = m
+            curation.save(cfg, curation.run(cfg, note))
+        except Exception as exc:
+            _CURATION_PROGRESS["message"] = f"Error: {exc}"
+        finally:
+            _CURATION_PROGRESS["running"] = False
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {"status": "started"}
+
+
+@app.get("/api/curation/progress")
+async def api_curation_progress():
+    return dict(_CURATION_PROGRESS)
+
+
+@app.get("/api/curation")
+async def api_curation():
+    cfg = _get_config()
+    return {"running": _CURATION_PROGRESS["running"], "report": curation.load(cfg)}
 
 
 def start_web_server(host: str = "127.0.0.1", port: int = 8080, config_path: str | None = None):

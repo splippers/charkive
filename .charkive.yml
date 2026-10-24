@@ -1,0 +1,51 @@
+# Charkive — burn fluff, guard masters
+version: 1
+root: /mnt/SANDIEGO
+sandbox: true
+sanitorium:
+  path: .charkive/sanitorium
+  retention_days: 30
+sanctuary:
+  - /Archive/**
+  - /Masters/**
+  - /Originals/**
+  - /Camera/**
+  - /Deliverables/**
+protect_extensions:
+  - .mov
+  - .mp4
+  - .mxf
+  - .braw
+  - .r3d
+  - .wav
+  - .aif
+sanity_rules:
+  - name: shyte_dotfiles
+    tier: shyte
+    match:
+      - .DS_Store
+      - Thumbs.db
+  - name: kiloshyte_media_cache
+    tier: kiloshyte
+    path: '**/Media Cache*/**'
+    age_days: 30
+  - name: kiloshyte_render_files
+    tier: kiloshyte
+    path: '**/Render Files/**'
+    age_days: 14
+  - name: shyte_scratch_ext
+    tier: shyte
+    extensions:
+      - .tmp
+      - .bak
+      - .pek
+      - .cfa
+    age_days: 7
+brick_protection:
+  enabled: true
+  forbidden_paths:
+    - /SANDIEGO
+    - /bricks
+gluster:
+  volume: sandiego
+spinal_tap_mode: false

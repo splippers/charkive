@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Curation{% endblock %}
+{% block heading %}Document Curation{% endblock %}
+{% block content %}
+<div class="card">
+  <div class="card-header">
+    <span>Important documents, ranked by importance and risk. Read-only: nothing is moved or deleted.</span>
+    <button class="btn btn-sm btn-primary" id="cur-run" onclick="runCuration()">&#x21bb; Run curation</button>
+  </div>
+  <div class="card-body" id="cur-summary"><div class="spinner"></div></div>
+</div>
+<div class="card" id="cur-sanct" style="display:none">
+  <div class="card-header">Suggested sanctuary rules (paste into .charkive.yml under <code>sanctuary:</code>)</div>
+  <div class="card-body"><pre id="cur-sanct-yaml" style="white-space:pre-wrap"></pre></div>
+</div>
+<div class="card"><div class="card-header">At risk &mdash; important, not versioned, not in the sanctuary</div>
+  <div class="card-body table-wrap" id="cur-at_risk"></div></div>
+<div class="card"><div class="card-header">Duplicates &mdash; identical copies (suggested keeper first)</div>
+  <div class="card-body table-wrap" id="cur-duplicates"></div></div>
+<div class="card"><div class="card-header">Superseded &mdash; older versions beside a newer one</div>
+  <div class="card-body table-wrap" id="cur-superseded"></div></div>
+<div class="card"><div class="card-header">Stale &mdash; low value, untouched for 2+ years (review only)</div>
+  <div class="card-body table-wrap" id="cur-stale"></div></div>
+<div class="card"><div class="card-header">Already protected</div>
+  <div class="card-body table-wrap" id="cur-protected"></div></div>
+{% endblock %}
+{% block scripts %}
+<script>
+function curDate(t) { return new Date(t * 1000).toISOString().slice(0, 10); }
+function curRows(id, head, rows) {
+  const el = document.getElementById('cur-' + id);
+  if (!rows.length) { el.innerHTML = '<div class="meta-line">Nothing here.</div>'; return; }
+  el.innerHTML = '<table><thead><tr>' + head.map(h => '<th>' + h + '</th>').join('') + '</tr></thead><tbody>' +
+    rows.map(r => '<tr>' + r.map(c => '<td>' + c + '</td>').join('') + '</tr>').join('') + '</tbody></table>';
+}
+function curRender(r) {
+  const c = r.counts;
+  document.getElementById('cur-summary').innerHTML =
+    '<div class="overview-grid">' +
+    [['Documents', r.documents], ['At risk', c.at_risk], ['Duplicate groups', c.duplicate_groups],
+     ['Superseded', c.superseded], ['Stale', c.stale], ['Protected', c.protected]]
+      .map(x => '<div class="stat-row"><span class="stat-value">' + x[1] + '</span><span class="stat-label">' + x[0] + '</span></div>').join('') +
+    '</div><div class="meta-line">' + escHtml(r.root) + ' &middot; ' + r.files_seen + ' files seen &middot; ' +
+    new Date(r.generated * 1000).toLocaleString() + (r.truncated ? ' &middot; <b>partial: hit the scan limit</b>' : '') + '</div>';
+  const doc = x => '<span class="file-row">' + escHtml(x.path) + '</span>';
+  curRows('at_risk', ['Document', 'Score', 'Size', 'Modified', 'Why'],
+    r.at_risk.map(x => [doc(x), x.score, fmtBytes(x.size), curDate(x.mtime), escHtml(x.why.join('; '))]));
+  curRows('duplicates', ['Keep', 'Also exists at', 'Size'],
+    r.duplicates.map(g => [escHtml(g.keep), g.copies.slice(1).map(escHtml).join('<br>'), fmtBytes(g.size)]));
+  curRows('superseded', ['Older', 'Newer', 'Size'],
+    r.superseded.map(x => [escHtml(x.path), escHtml(x.superseded_by), fmtBytes(x.size)]));
+  curRows('stale', ['Document', 'Size', 'Modified'], r.stale.map(x => [doc(x), fmtBytes(x.size), curDate(x.mtime)]));
+  curRows('protected', ['Document', 'Score', 'Why'], r.protected.map(x => [doc(x), x.score, escHtml(x.why.join('; '))]));
+  const s = document.getElementById('cur-sanct');
+  if (r.suggested_sanctuary.length) {
+    s.style.display = '';
+    document.getElementById('cur-sanct-yaml').textContent = r.suggested_sanctuary.map(x => '  - ' + x).join('\n');
+  } else { s.style.display = 'none'; }
+}
+function curLoad() {
+  fetch('/api/curation').then(r => r.json()).then(r => {
+    if (r.report) curRender(r.report);
+    else document.getElementById('cur-summary').innerHTML = '<div class="meta-line">No curation run yet. Press "Run curation".</div>';
+    if (r.running) curPoll();
+  });
+}
+function curPoll() {
+  document.getElementById('cur-run').disabled = true;
+  const t = setInterval(() => fetch('/api/curation/progress').then(r => r.json()).then(p => {
+    document.getElementById('cur-run').textContent = p.message || 'Running...';
+    if (!p.running) { clearInterval(t); document.getElementById('cur-run').disabled = false;
+      document.getElementById('cur-run').innerHTML = '&#x21bb; Run curation'; curLoad(); }
+  }), 2000);
+}
+function runCuration() {
+  fetch('/api/curation/run', {method: 'POST'}).then(r => r.json()).then(() => { showToast('Curation started'); curPoll(); });
+}
+curLoad();
+</script>
+{% endblock %}
