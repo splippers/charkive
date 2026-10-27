@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -51,18 +52,36 @@ def _immutable(path: Path) -> bool:
     return False
 
 
-def _mtime_age_days(st: os.stat_result, now: float) -> float:
+def _mtime_age_days(mtime: float, now: float) -> float:
     try:
-        return max(0.0, (now - float(st.st_mtime)) / 86400.0)
+        return max(0.0, (now - float(mtime)) / 86400.0)
     except OverflowError:
         return 0.0
 
 
-def _atime_age_days(st: os.stat_result, now: float) -> float | None:
+def _atime_age_days(atime: float | None, now: float) -> float | None:
+    if atime is None:
+        return None
     try:
-        return max(0.0, (now - float(st.st_atime)) / 86400.0)
+        return max(0.0, (now - float(atime)) / 86400.0)
     except OverflowError:
         return None
+
+
+@dataclass(frozen=True)
+class FileMeta:
+    """What the policy needs to know about one file, wherever it lives.
+
+    A local file fills this from os.stat; a cloud file fills it from a listing.
+    atime is None when the backend does not know it, which makes atime rules fail closed.
+    """
+
+    rel_posix: str
+    size: int
+    mtime: float
+    atime: float | None = None
+    immutable: bool = False
+    has_sibling: Callable[[str], bool] = lambda ext: False
 
 
 @dataclass
@@ -149,12 +168,27 @@ class FireCodes:
         st: os.stat_result,
         now: float | None = None,
     ) -> tuple[str, str | None, str | None]:
+        """Classify a local file. See classify_meta."""
+        meta = FileMeta(
+            rel_posix=rel_posix,
+            size=st.st_size,
+            mtime=st.st_mtime,
+            atime=st.st_atime,
+            immutable=_immutable(full_path),
+            has_sibling=lambda ext: full_path.with_suffix(ext).exists(),
+        )
+        return self.classify_meta(meta, now=now)
+
+    def classify_meta(
+        self, meta: FileMeta, *, now: float | None = None
+    ) -> tuple[str, str | None, str | None]:
         """Return status in {protect,candidate,review}, optional tier name, matched rule."""
         now_t = now if now is not None else time.time()
+        rel_posix = meta.rel_posix
         rel_adj = PurePosixPath(rel_posix).as_posix()
         prefix = "/" + rel_adj.lower() + "/"
 
-        if _immutable(full_path):
+        if meta.immutable:
             return "protect", None, None
 
         if self._sanctuary is not None and self._sanctuary.match_file(rel_adj):
@@ -186,13 +220,13 @@ class FireCodes:
             if not rule_extensions_matches(cr.raw, ext):
                 continue
 
-            if not sibling_requirements_met(full_path, cr.raw):
+            if not sibling_requirements_met(meta.has_sibling, cr.raw):
                 continue
 
-            if not age_checks_ok(cr.raw, st, now_t):
+            if not age_checks_ok(cr.raw, meta.mtime, meta.atime, now_t):
                 continue
 
-            if not size_checks_ok(cr.raw, st.st_size):
+            if not size_checks_ok(cr.raw, meta.size):
                 continue
 
             tw = tier_weight(cr.tier)
@@ -224,7 +258,7 @@ def _norm_ext_tuple(x: Any) -> str:
     return f".{s}" if s else ""
 
 
-def sibling_requirements_met(full_path: Path, rule: dict[str, Any]) -> bool:
+def sibling_requirements_met(has_sibling: Callable[[str], bool], rule: dict[str, Any]) -> bool:
     need = rule.get("require_no_sibling") or rule.get("missing_siblings") or ()
     if not need:
         return True
@@ -232,26 +266,25 @@ def sibling_requirements_met(full_path: Path, rule: dict[str, Any]) -> bool:
         ext = _norm_ext_tuple(x)
         if not ext:
             continue
-        cand = full_path.with_suffix(ext)
-        if cand.exists():
+        if has_sibling(ext):
             return False
     return True
 
 
-def age_checks_ok(rule: dict[str, Any], st: os.stat_result, now: float) -> bool:
+def age_checks_ok(rule: dict[str, Any], mtime: float, atime: float | None, now: float) -> bool:
     if "age_days" in rule:
         need = float(rule["age_days"])
-        if need > 0 and _mtime_age_days(st, now) < need:
+        if need > 0 and _mtime_age_days(mtime, now) < need:
             return False
 
     if "mtime_days" in rule:
         need = float(rule["mtime_days"])
-        if need > 0 and _mtime_age_days(st, now) < need:
+        if need > 0 and _mtime_age_days(mtime, now) < need:
             return False
 
     if "atime_days" in rule:
         need = float(rule["atime_days"])
-        ad = _atime_age_days(st, now)
+        ad = _atime_age_days(atime, now)
         if ad is None or ad < need:
             return False
     return True
