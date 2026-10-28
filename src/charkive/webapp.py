@@ -117,11 +117,25 @@ app = FastAPI(
 )
 
 
+_PROXY_HEADERS = ("forwarded", "x-forwarded-for", "x-forwarded-host", "x-real-ip")
+
+
+def _untrusted_without_token(request: Request) -> bool:
+    """True if an unauthenticated request may not come from a local browser.
+
+    A reverse proxy or tunnel on this host makes every request look like
+    loopback, so any proxy header means the peer address cannot be trusted.
+    """
+    peer = request.client.host if request.client else None
+    if not _is_loopback_host(peer):
+        return True
+    return any(name in request.headers for name in _PROXY_HEADERS)
+
+
 @app.middleware("http")
 async def require_local_peer_without_token(request: Request, call_next):
     if not os.environ.get("CHARKIVE_WEB_TOKEN"):
-        peer = request.client.host if request.client else None
-        if not _is_loopback_host(peer):
+        if _untrusted_without_token(request):
             return JSONResponse(
                 {"detail": "Remote Charkive access requires CHARKIVE_WEB_TOKEN"},
                 status_code=403,

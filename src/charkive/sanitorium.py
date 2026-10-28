@@ -43,6 +43,15 @@ def _move_no_replace(src: Path, dest: Path) -> None:
     src.unlink()
 
 
+def _append_manifest(bucket: Path, record: dict[str, object]) -> None:
+    mf = _manifest_path(bucket)
+    mf.parent.mkdir(parents=True, exist_ok=True)
+    with mf.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(record, separators=(",", ":")) + "\n")
+        fh.flush()
+        os.fsync(fh.fileno())
+
+
 def _safe_relative_path(value: str) -> Path:
     rel = PurePosixPath(value)
     if rel.is_absolute() or not rel.parts or any(part in {"", ".", ".."} for part in rel.parts):
@@ -102,21 +111,17 @@ def sanitise_moves(
 
     staged: list[int] = []
     moved_bytes = 0
-    manifest_records: list[dict[str, object]] = []
 
     for aid, src, dest, nbytes in pending:
-
-        manifest_records.append(
-            {
-                "artifact_id": aid,
-                "from": src.relative_to(root).as_posix(),
-                "to": dest.relative_to(san_root).as_posix(),
-                "tier": tier_key,
-                "bytes": nbytes,
-                "dry_run": dry_run,
-                "utc": datetime.now(UTC).isoformat(timespec="seconds"),
-            }
-        )
+        record = {
+            "artifact_id": aid,
+            "from": src.relative_to(root).as_posix(),
+            "to": dest.relative_to(san_root).as_posix(),
+            "tier": tier_key,
+            "bytes": nbytes,
+            "dry_run": dry_run,
+            "utc": datetime.now(UTC).isoformat(timespec="seconds"),
+        }
 
         if dry_run:
             staged.append(aid)
@@ -129,19 +134,13 @@ def sanitise_moves(
         except ValueError as exc:
             raise RuntimeError(f"SANitorium destination escapes configured path: {dest}") from exc
         _move_no_replace(src, dest)
+        # Journal each file as soon as it moves, so a failure on a later file
+        # cannot leave earlier ones in the SANitorium without a record.
+        _append_manifest(bucket, record)
+        db.mark_quarantined(conn, ids=[aid])
 
         staged.append(aid)
         moved_bytes += nbytes
-
-    if manifest_records and not dry_run:
-        mf = _manifest_path(bucket)
-        mf.parent.mkdir(parents=True, exist_ok=True)
-        lines = "".join(json.dumps(rec, separators=(",", ":")) + "\n" for rec in manifest_records)
-        with mf.open("a", encoding="utf-8") as fh:
-            fh.write(lines)
-
-    if not dry_run and staged:
-        db.mark_quarantined(conn, ids=staged)
 
     return staged, moved_bytes
 

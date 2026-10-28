@@ -1,4 +1,5 @@
 import asyncio
+from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
@@ -88,3 +89,22 @@ def test_web_api_rejects_brick_paths_before_actions(monkeypatch, charkive_config
         webapp._check_disk_safety(charkive_config)
 
     assert blocked.value.status_code == 403
+
+
+@pytest.mark.parametrize(
+    ("peer", "headers", "untrusted"),
+    [
+        ("127.0.0.1", {}, False),
+        ("::1", {}, False),
+        ("192.168.1.50", {}, True),
+        ("127.0.0.1", {"x-forwarded-for": "203.0.113.9"}, True),
+        ("127.0.0.1", {"forwarded": "for=203.0.113.9"}, True),
+        ("127.0.0.1", {"x-real-ip": "203.0.113.9"}, True),
+        (None, {}, True),
+    ],
+)
+def test_tokenless_access_needs_a_trustworthy_loopback_peer(peer, headers, untrusted):
+    request = SimpleNamespace(
+        client=SimpleNamespace(host=peer) if peer else None, headers=headers
+    )
+    assert webapp._untrusted_without_token(request) is untrusted
