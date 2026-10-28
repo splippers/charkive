@@ -9,7 +9,7 @@ import time
 from pathlib import Path
 
 from charkive import db
-from charkive.config import CharkiveConfig
+from charkive.config import CharkiveConfig, verify_filesystem_identity
 from charkive.fire_codes import FireCodes
 from charkive.paths import jail_check
 
@@ -82,6 +82,7 @@ def gluster_warnings(cfg: CharkiveConfig) -> list[str]:
 
 
 def run_scan(cfg: CharkiveConfig, *, do_hash: bool = False, progress_every: int = 2500) -> tuple[int, SkipStats]:
+    verify_filesystem_identity(cfg)
     root = cfg.root.resolve()
     conn = db.connect(cfg.state_db_path())
     scan_id = db.start_scan(conn, root)

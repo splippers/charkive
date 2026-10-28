@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import os
+import re
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -139,6 +141,8 @@ class CharkiveConfig:
     gluster: GlusterCfg
     spinal_tap_mode: bool
     source_file: Path
+    filesystem_mountpoint: Path | None = None
+    filesystem_device: str | None = None
 
     def state_db_path(self) -> Path:
         return self.root / ".charkive" / "charkive.db"
@@ -151,11 +155,73 @@ class CharkiveConfig:
 def ensure_config_near_root_written(root: Path) -> Path:
     dest = root / DEFAULT_CONFIG_NAME
     if dest.exists():
+        with dest.open(encoding="utf-8") as fh:
+            existing = yaml.safe_load(fh) or {}
+        if "filesystem_guard" not in existing:
+            identity = filesystem_identity(root)
+            with dest.open("a", encoding="utf-8") as fh:
+                fh.write(
+                    "\nfilesystem_guard:\n"
+                    f"  mountpoint: {json.dumps(str(identity['mountpoint']))}\n"
+                    f"  device: {json.dumps(identity['device'])}\n"
+                )
         return dest
     dest.parent.mkdir(parents=True, exist_ok=True)
-    body = DEFAULT_YAML_BODY + f'\nroot: "{root}"\n'
+    identity = filesystem_identity(root)
+    body = (
+        DEFAULT_YAML_BODY
+        + f"\nroot: {json.dumps(str(root))}\n"
+        + "filesystem_guard:\n"
+        + f"  mountpoint: {json.dumps(str(identity['mountpoint']))}\n"
+        + f"  device: {json.dumps(identity['device'])}\n"
+    )
     dest.write_text(body, encoding="utf-8")
     return dest
+
+
+def filesystem_identity(root: Path) -> dict[str, str]:
+    """Identify the mounted filesystem containing root on Linux."""
+    resolved = root.expanduser().resolve(strict=True)
+    device_stat = resolved.stat()
+    device = f"{os.major(device_stat.st_dev)}:{os.minor(device_stat.st_dev)}"
+    mountinfo = Path("/proc/self/mountinfo")
+    if not mountinfo.is_file():
+        raise RuntimeError("Cannot verify storage mount identity: /proc/self/mountinfo is unavailable.")
+
+    matches: list[Path] = []
+    with mountinfo.open(encoding="utf-8") as fh:
+        for line in fh:
+            fields = line.split(" - ", 1)[0].split()
+            if len(fields) < 5:
+                continue
+            mountpoint = re.sub(
+                r"\\([0-7]{3})",
+                lambda match: chr(int(match.group(1), 8)),
+                fields[4],
+            )
+            point = Path(mountpoint)
+            try:
+                resolved.relative_to(point)
+                matches.append(point)
+            except ValueError:
+                continue
+    if not matches:
+        raise RuntimeError(f"Cannot identify the mounted filesystem containing {resolved}.")
+    return {"mountpoint": str(max(matches, key=lambda point: len(point.parts))), "device": device}
+
+
+def verify_filesystem_identity(config: CharkiveConfig) -> None:
+    if config.filesystem_mountpoint is None or config.filesystem_device is None:
+        return
+    current = filesystem_identity(config.root)
+    if (
+        current["mountpoint"] != str(config.filesystem_mountpoint)
+        or current["device"] != config.filesystem_device
+    ):
+        raise RuntimeError(
+            "Configured storage filesystem identity changed; refusing to scan or move files. "
+            "Mount the original filesystem or reinitialize Charkive for this root."
+        )
 
 
 def load_config(config_path: Path | None = None) -> CharkiveConfig:
@@ -208,6 +274,11 @@ def load_config(config_path: Path | None = None) -> CharkiveConfig:
         gv_str = gv.strip()
 
     gluster = GlusterCfg(volume=gv_str, pre_sanity_checks=vol_block.get("pre_sanity_checks"))
+    filesystem_guard = raw.get("filesystem_guard") or {}
+    mountpoint_value = filesystem_guard.get("mountpoint")
+    device_value = filesystem_guard.get("device")
+    if bool(mountpoint_value) != bool(device_value):
+        raise ValueError("filesystem_guard must specify both mountpoint and device.")
 
     return CharkiveConfig(
         version=int(raw.get("version", 1)),
@@ -221,4 +292,6 @@ def load_config(config_path: Path | None = None) -> CharkiveConfig:
         gluster=gluster,
         spinal_tap_mode=bool(raw.get("spinal_tap_mode", False)),
         source_file=fp.resolve(),
+        filesystem_mountpoint=Path(mountpoint_value) if mountpoint_value else None,
+        filesystem_device=str(device_value) if device_value else None,
     )

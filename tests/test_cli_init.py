@@ -21,3 +21,4 @@ def test_init_accepts_local_filesystem_directory(tmp_path):
     config = (root / ".charkive.yml").read_text()
     assert f'root: "{root}"' in config
     assert "gluster:\n  volume: \"\"" in config
+    assert "filesystem_guard:" in config

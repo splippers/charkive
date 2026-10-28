@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 
 from charkive import db
-from charkive.config import CharkiveConfig
+from charkive.config import CharkiveConfig, verify_filesystem_identity
 from charkive.paths import forbidden_brick_resolve
 
 
@@ -58,6 +58,7 @@ def sanitise_moves(
     tier: str | None,
     dry_run: bool,
 ) -> tuple[list[int], int]:
+    verify_filesystem_identity(cfg)
     if forbidden_brick_resolve(cfg.root, cfg.brick):
         raise RuntimeError("Brick protection rejected this root; mount the Gluster export instead.")
 
@@ -168,6 +169,7 @@ def purge_note() -> str:
 
 
 def quench(cfg: CharkiveConfig, sanitor_relative: str) -> None:
+    verify_filesystem_identity(cfg)
     if forbidden_brick_resolve(cfg.root, cfg.brick):
         raise RuntimeError("Brick protection rejected this root; mount the Gluster export instead.")
 
