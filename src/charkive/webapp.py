@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
+import secrets
 import threading
 import time as _time
 from contextlib import asynccontextmanager
@@ -10,14 +12,17 @@ from pathlib import Path
 from typing import Any
 
 import jinja2
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 
 from charkive import db as ckdb
 from charkive import curation, sanitorium, sandwich
 from charkive import sanity as sanity_runner
-from charkive.config import load_config, BrickCfg, CharkiveConfig
+from charkive.config import BrickCfg, CharkiveConfig, load_config
+from charkive.fire_codes import tier_confirmation, tier_weight
+from charkive.paths import forbidden_brick_resolve
 
 _SCAN_PROGRESS: dict[str, Any] = {"running": False, "scan_id": None, "message": ""}
 
@@ -72,7 +77,56 @@ async def _lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Charkive Web", version="1.0.0", lifespan=_lifespan)
+_basic_auth = HTTPBasic(auto_error=False)
+
+
+def _require_web_auth(credentials: HTTPBasicCredentials | None = Depends(_basic_auth)) -> None:
+    token = os.environ.get("CHARKIVE_WEB_TOKEN")
+    if not token:
+        return
+    valid = (
+        credentials is not None
+        and secrets.compare_digest(credentials.username.encode(), b"charkive")
+        and secrets.compare_digest(credentials.password.encode(), token.encode())
+    )
+    if not valid:
+        raise HTTPException(
+            status_code=401,
+            detail="Authentication required",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+
+
+def _is_loopback_host(host: str | None) -> bool:
+    if not host:
+        return False
+    try:
+        return ipaddress.ip_address(host.split("%", 1)[0]).is_loopback
+    except ValueError:
+        return host.lower() == "localhost"
+
+
+app = FastAPI(
+    title="Charkive Web",
+    version="1.0.0",
+    lifespan=_lifespan,
+    dependencies=[Depends(_require_web_auth)],
+    docs_url=None,
+    redoc_url=None,
+    openapi_url=None,
+)
+
+
+@app.middleware("http")
+async def require_local_peer_without_token(request: Request, call_next):
+    if not os.environ.get("CHARKIVE_WEB_TOKEN"):
+        peer = request.client.host if request.client else None
+        if not _is_loopback_host(peer):
+            return JSONResponse(
+                {"detail": "Remote Charkive access requires CHARKIVE_WEB_TOKEN"},
+                status_code=403,
+            )
+    return await call_next(request)
 
 
 def _as_iso(ts: float | None) -> str | None:
@@ -315,6 +369,7 @@ async def api_scan_artifacts(
 @app.post("/api/scan/run")
 async def api_run_scan():
     cfg = _get_config()
+    _check_brick_protection(cfg)
     if _SCAN_PROGRESS.get("running", False):
         raise HTTPException(status_code=409, detail="Scan already in progress")
 
@@ -381,23 +436,44 @@ async def api_sanitorium():
 @app.post("/api/sanitise")
 async def api_sanitise(payload: dict[str, Any]):
     cfg = _get_config()
-    tier = payload.get("tier")
     dry_run = payload.get("dry_run", True)
+    if not isinstance(dry_run, bool):
+        raise HTTPException(status_code=400, detail="'dry_run' must be true or false")
+    tier = _web_tier(payload.get("tier"))
+    _check_disk_safety(cfg)
     if not dry_run:
         _forbid_if_readonly()
     conn = ckdb.connect(cfg.state_db_path())
-    latest = ckdb.latest_scan(conn)
-    if not latest:
-        conn.close()
-        raise HTTPException(status_code=400, detail="No scans available")
-    scan_id = int(latest[0])
     try:
+        latest = ckdb.latest_scan(conn)
+        if not latest:
+            raise HTTPException(status_code=400, detail="No scans available")
+        scan_id = int(latest[0])
+        selected_tier = tier
+        if selected_tier is None:
+            candidates = conn.execute(
+                "SELECT DISTINCT tier FROM artifacts WHERE scan_id=? AND status='candidate' AND tier IS NOT NULL",
+                (scan_id,),
+            ).fetchall()
+            selected_tier = max(
+                (str(row[0]).lower() for row in candidates if row[0]),
+                key=tier_weight,
+                default=None,
+            )
+        if not dry_run:
+            _require_tier_confirmation(selected_tier, payload.get("confirmation"))
         staged, moved_bytes = sanitorium.sanitise_moves(
             cfg, conn, scan_id=scan_id, tier=tier, dry_run=dry_run
         )
-    except Exception as exc:
+    except HTTPException:
         conn.close()
-        raise HTTPException(status_code=500, detail=str(exc))
+        raise
+    except (FileExistsError, RuntimeError) as exc:
+        conn.close()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception:
+        conn.close()
+        raise
     conn.close()
     return {
         "staged": len(staged),
@@ -411,13 +487,16 @@ async def api_sanitise(payload: dict[str, Any]):
 async def api_quench(payload: dict[str, Any]):
     cfg = _get_config()
     _forbid_if_readonly()
+    _check_disk_safety(cfg)
     rel_path = payload.get("path", "")
-    if not rel_path:
+    if not isinstance(rel_path, str) or not rel_path:
         raise HTTPException(status_code=400, detail="Missing 'path'")
     try:
         sanitorium.quench(cfg, rel_path)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+    except FileExistsError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except (OSError, RuntimeError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"status": "restored", "path": rel_path}
 
 
@@ -457,12 +536,54 @@ def _forbid_if_readonly() -> None:
         raise HTTPException(status_code=403, detail="Charkive is running read-only (CHARKIVE_READONLY)")
 
 
+def _web_tier(value: Any) -> str | None:
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    if not isinstance(value, str):
+        raise HTTPException(status_code=400, detail="'tier' must be a tier name")
+    tier = value.strip().lower()
+    if tier == "11":
+        raise HTTPException(status_code=400, detail="Use the named tier 'gigashyte', not '11'")
+    tier = {"1": "shyte", "5": "kiloshyte", "10": "megashyte"}.get(tier, tier)
+    if tier not in {"shyte", "kiloshyte", "megashyte", "gigashyte"}:
+        raise HTTPException(status_code=400, detail=f"Unknown tier: {value}")
+    return tier
+
+
+def _require_tier_confirmation(tier: str | None, supplied: Any) -> None:
+    expected = tier_confirmation(tier)
+    if expected is None:
+        return
+    if not isinstance(supplied, str):
+        raise HTTPException(status_code=400, detail=f"Type {expected!r} in 'confirmation' to proceed")
+    if tier == "gigashyte":
+        valid = "".join(ch for ch in supplied.upper() if ch.isalnum()) == "THESEGOTOELEVEN"
+    else:
+        valid = supplied.strip().upper() == expected
+    if not valid:
+        raise HTTPException(status_code=400, detail=f"Confirmation did not match {expected!r}")
+
+
+def _check_disk_safety(cfg: CharkiveConfig) -> None:
+    _check_brick_protection(cfg)
+    try:
+        sanity_runner.gluster_warnings(cfg)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+def _check_brick_protection(cfg: CharkiveConfig) -> None:
+    if forbidden_brick_resolve(cfg.root, cfg.brick):
+        raise HTTPException(status_code=403, detail="Brick protection rejected this root")
+
+
 _CURATION_PROGRESS: dict[str, Any] = {"running": False, "message": ""}
 
 
 @app.post("/api/curation/run")
 async def api_curation_run():
     cfg = _get_config()
+    _check_brick_protection(cfg)
     if _CURATION_PROGRESS["running"]:
         raise HTTPException(status_code=409, detail="Curation already running")
 
@@ -494,6 +615,11 @@ async def api_curation():
 
 def start_web_server(host: str = "127.0.0.1", port: int = 8080, config_path: str | None = None):
     import uvicorn
+
+    token = os.environ.get("CHARKIVE_WEB_TOKEN")
+    loopback = _is_loopback_host(host)
+    if not loopback and not token:
+        raise RuntimeError("Binding Charkive Web beyond localhost requires CHARKIVE_WEB_TOKEN.")
 
     if config_path:
         global _config

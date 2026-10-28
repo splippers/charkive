@@ -17,11 +17,20 @@ TIER_WEIGHT: dict[str, int] = {
     "gigashyte": 11,
 }
 
+TIER_CONFIRMATION: dict[str, str] = {
+    "megashyte": "MEGASHYTE",
+    "gigashyte": "THESE GO TO ELEVEN",
+}
+
 
 def tier_weight(name: str | None) -> int:
     if not name:
         return 0
     return TIER_WEIGHT.get(name.lower(), 0)
+
+
+def tier_confirmation(tier: str | None) -> str | None:
+    return TIER_CONFIRMATION.get(tier.lower()) if tier else None
 
 
 def _pat_for_gitwild(rel_pat: str) -> str:

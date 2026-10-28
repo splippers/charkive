@@ -109,13 +109,15 @@ def dashboard(
 def init(
     root: Annotated[
         Path,
-        typer.Argument(help="SAN root mount (sandbox universe)"),
+        typer.Argument(help="Existing directory or mounted filesystem to curate"),
     ],
 ):
     rp = Path(root).expanduser()
-    rp.mkdir(parents=True, exist_ok=True)
+    if not rp.is_dir():
+        typer.echo(f"Root must be an existing directory (mount the disk first): {rp}", err=True)
+        raise typer.Exit(2)
     resolved = rp.resolve(strict=False)
-    if forbidden_brick_resolve(resolved, BrickCfg(enabled=True, forbidden_paths=("/SANDIEGO", "/bricks"))):
+    if forbidden_brick_resolve(resolved, BrickCfg(enabled=True, forbidden_paths=())):
         typer.echo("Aborting brick path.")
         raise typer.Exit(5)
     config_path = ensure_config_near_root_written(resolved)
@@ -241,7 +243,15 @@ def san_quench(
     specimen: Annotated[str, typer.Argument(help="Relative SANitorium path YEAR-W-xx/... ")],
     cfg_path: _ConfigOpt = None,
 ):
-    sanitorium.quench(cfg(cfg_path), specimen)
+    configuration = cfg(cfg_path)
+    guard_bricks(configuration)
+    try:
+        for memo in sanity_runner.gluster_warnings(configuration):
+            typer.echo(memo)
+    except RuntimeError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(11) from exc
+    sanitorium.quench(configuration, specimen)
 
 
 app.add_typer(san_tp, name="sanitorium")
@@ -266,7 +276,11 @@ def web(
 
     typer.secho(f"Charkive Web — http://{host}:{port}", fg=typer.colors.GREEN)
     typer.echo("Press Ctrl+C to stop.")
-    start_web_server(host=host, port=port, config_path=str(cfg_path) if cfg_path else None)
+    try:
+        start_web_server(host=host, port=port, config_path=str(cfg_path) if cfg_path else None)
+    except RuntimeError as exc:
+        typer.secho(str(exc), fg=typer.colors.RED, err=True)
+        raise typer.Exit(2) from exc
 
 
 def main() -> None:

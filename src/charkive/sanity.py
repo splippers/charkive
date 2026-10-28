@@ -37,7 +37,7 @@ def gluster_warnings(cfg: CharkiveConfig) -> list[str]:
     if not vol:
         return []
     if shutil.which("gluster") is None:
-        return ["⚠️  Gluster CLI not installed; skipping heal/quorum probes."]
+        raise RuntimeError("Gluster CLI not installed; refusing to skip configured Gluster safety checks.")
 
     try:
         heal = subprocess.run(
@@ -48,10 +48,14 @@ def gluster_warnings(cfg: CharkiveConfig) -> list[str]:
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        return [f"⚠️  Gluster heal probe failed: {exc}"]
+        raise RuntimeError(f"Gluster heal probe failed: {exc}") from exc
 
-    heals = sorted({int(x) for x in re.findall(r"Number of entries:\s+(\d+)", heal.stdout, flags=re.I)})
-    if heals and max(heals) > 0:
+    if heal.returncode != 0:
+        raise RuntimeError(f"Gluster heal probe failed: {heal.stderr.strip() or heal.stdout.strip()}")
+    heals = [int(x) for x in re.findall(r"^\s*Number of entries:\s*(\d+)\s*$", heal.stdout, flags=re.I | re.M)]
+    if not heals:
+        raise RuntimeError("Gluster heal output was unrecognized; refusing to proceed.")
+    if any(count > 0 for count in heals):
         raise RuntimeError(
             "Gluster heal entries remain on this volume. Fix heals before sanitising SAN data."
         )
@@ -65,10 +69,14 @@ def gluster_warnings(cfg: CharkiveConfig) -> list[str]:
             check=False,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        return [f"⚠️  Gluster quorum probe skipped: {exc}"]
+        raise RuntimeError(f"Gluster status probe failed: {exc}") from exc
 
-    if status.returncode != 0 or "Y" not in status.stdout:
-        return ["⚠️  Gluster status output looked unhealthy; inspect `gluster volume status` manually."]
+    if status.returncode != 0:
+        raise RuntimeError(f"Gluster status probe failed: {status.stderr.strip() or status.stdout.strip()}")
+    bricks = re.findall(r"^\s*Brick\s*:\s*.+$", status.stdout, flags=re.I | re.M)
+    online = re.findall(r"^\s*Online:\s*(\S+)\s*$", status.stdout, flags=re.I | re.M)
+    if not bricks or len(bricks) != len(online) or any(value.upper() != "Y" for value in online):
+        raise RuntimeError("Gluster status output was unhealthy or unrecognized; inspect `gluster volume status`.")
 
     return []
 

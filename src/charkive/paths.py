@@ -11,45 +11,40 @@ def forbidden_brick_resolve(root: Path, brick_cfg: BrickCfg | None = None) -> bo
         return False
     try:
         resolved = root.resolve(strict=False)
-    except OSError:
+    except (OSError, RuntimeError):
         return True
 
-    forb: tuple[str, ...] = (
-        brick_cfg.forbidden_paths
-        if brick_cfg
-        else (
-            "/SANDIEGO",
-            "/bricks",
-        )
-    )
+    forb: tuple[str, ...] = brick_cfg.forbidden_paths if brick_cfg else ()
 
     s = str(resolved)
     # Exact matches and prefix matches against normalized forbidden entries
-    norm_list = [_norm_forbid(x) for x in forb]
+    norm_list = [_norm_forbid(x) for x in forb if x.strip()]
 
     if s in frozenset(norm_list):
         return True
-    if any(pref and s.startswith(pref) for pref in norm_list):
+    if any(pref and s.startswith(pref.rstrip(os.sep) + os.sep) for pref in norm_list):
         return True
 
-    try:
-        if (resolved / ".glusterfs").exists():
-            return True
-        if getattr(os, "listxattr", None):
-            xa = os.listxattr(resolved, follow_symlinks=False)
-            # Linux returns str attrs; tolerate bytes
-            for a in xa:
-                name = a if isinstance(a, str) else a.decode("ascii", errors="ignore")
-                if name.startswith("trusted.glusterfs"):
-                    return True
-    except OSError:
-        pass
+    for probe in (resolved, *resolved.parents):
+        try:
+            if (probe / ".glusterfs").exists():
+                return True
+            if getattr(os, "listxattr", None):
+                xa = os.listxattr(probe, follow_symlinks=False)
+                for a in xa:
+                    name = a if isinstance(a, str) else a.decode("ascii", errors="ignore")
+                    if name.startswith("trusted.glusterfs"):
+                        return True
+        except OSError:
+            continue
     return False
 
 
 def _norm_forbid(p: str) -> str:
-    p = os.path.abspath(os.path.expanduser(p.rstrip("*").rstrip("/")))
-    return p
+    expanded = os.path.expanduser(p.rstrip("*"))
+    if expanded != os.path.sep:
+        expanded = expanded.rstrip(os.path.sep)
+    return os.path.abspath(expanded)
 
 
 def jail_check(config: CharkiveConfig, candidate: Path) -> tuple[bool, str]:

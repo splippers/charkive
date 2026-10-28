@@ -1,6 +1,6 @@
 # Charkive — burn fluff, guard masters
 version: 1
-root: /mnt/SANDIEGO
+root: .
 sandbox: true
 sanitorium:
   path: .charkive/sanitorium
@@ -43,9 +43,7 @@ sanity_rules:
     age_days: 7
 brick_protection:
   enabled: true
-  forbidden_paths:
-    - /SANDIEGO
-    - /bricks
+  forbidden_paths: []
 gluster:
-  volume: sandiego
+  volume: ""
 spinal_tap_mode: false

@@ -9,35 +9,38 @@
 <body>
   <aside class="sidebar">
     <div class="sidebar-brand">
-      <span class="brand-icon">&#x1F525;</span>
-      <span class="brand-text">Charkive</span>
+      <span class="brand-mark" aria-hidden="true">C</span>
+      <span class="brand-lockup"><span class="brand-text">CHARKIVE</span><span class="brand-caption">SAN care, turned up</span></span>
     </div>
     <nav class="sidebar-nav">
       <a href="/dashboard" class="nav-item {% if active_page == 'dashboard' %}active{% endif %}">
-        <span class="nav-icon">&#x2302;</span> Dashboard
+        <span class="nav-icon">&#x2302;</span><span class="nav-label">Dashboard</span>
       </a>
       <a href="/scans" class="nav-item {% if active_page == 'scans' %}active{% endif %}">
-        <span class="nav-icon">&#x2630;</span> Scans
+        <span class="nav-icon">&#x2630;</span><span class="nav-label">Scans</span>
       </a>
       <a href="/sanitorium" class="nav-item {% if active_page == 'sanitorium' %}active{% endif %}">
-        <span class="nav-icon">&#x2691;</span> Sanitorium
+        <span class="nav-icon">&#x2691;</span><span class="nav-label">Sanitorium</span>
       </a>
       <a href="/curation" class="nav-item {% if active_page == 'curation' %}active{% endif %}">
-        <span class="nav-icon">&#x2605;</span> Curation
+        <span class="nav-icon">&#x2605;</span><span class="nav-label">Curation</span>
       </a>
       <a href="/config" class="nav-item {% if active_page == 'config' %}active{% endif %}">
-        <span class="nav-icon">&#x2699;</span> Config
+        <span class="nav-icon">&#x2699;</span><span class="nav-label">Config</span>
       </a>
     </nav>
     <div class="sidebar-footer">
-      <span class="version">v1.0.0</span>
-      <span class="tagline">All tiers go to 11</span>
+      <span class="live-label"><span class="status-dot online"></span> LOCAL CONSOLE</span>
+      <span class="tagline">Keep the masters. Burn the fluff.</span>
     </div>
   </aside>
 
   <main class="main">
     <header class="main-header">
-      <h1>{% block heading %}Dashboard{% endblock %}</h1>
+      <div class="header-title">
+        <span class="header-kicker">CHARKIVE / FIELD CONSOLE</span>
+        <h1>{% block heading %}Dashboard{% endblock %}</h1>
+      </div>
       <div class="header-status" id="header-status">
         <span class="status-dot" id="status-dot"></span>
         <span id="status-text">Loading...</span>

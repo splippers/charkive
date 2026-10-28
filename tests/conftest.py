@@ -6,7 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from charkive.config import load_config
+from charkive.config import (
+    BrickCfg,
+    CharkiveConfig,
+    GlusterCfg,
+    SanitoriumCfg,
+    load_config,
+)
 
 CONFIG = """\
 version: 1
@@ -49,8 +55,25 @@ def make_file(path: Path, data: bytes = b"x", *, age_days: float = 0) -> Path:
 
 
 @pytest.fixture
-def cfg(tmp_path):
+def cfg(tmp_path: Path):
     root = tmp_path / "san"
     root.mkdir()
     (root / ".charkive.yml").write_text(CONFIG + f'root: "{root}"\n', encoding="utf-8")
     return load_config(root / ".charkive.yml")
+
+
+@pytest.fixture
+def charkive_config(tmp_path: Path) -> CharkiveConfig:
+    return CharkiveConfig(
+        version=1,
+        root=tmp_path,
+        sandbox=True,
+        sanitorium=SanitoriumCfg(Path(".charkive/sanitorium"), 30),
+        sanctuary=(),
+        sanity_rules=(),
+        protect_extensions=frozenset(),
+        brick=BrickCfg(True, ()),
+        gluster=GlusterCfg(None),
+        spinal_tap_mode=False,
+        source_file=tmp_path / ".charkive.yml",
+    )

@@ -88,9 +88,7 @@ sanity_rules:
 
 brick_protection:
   enabled: true
-  forbidden_paths:
-    - /SANDIEGO
-    - /bricks
+  forbidden_paths: []
 
 gluster:
   volume: ""
@@ -200,7 +198,7 @@ def load_config(config_path: Path | None = None) -> CharkiveConfig:
     bb = raw.get("brick_protection") or {}
     brick = BrickCfg(
         enabled=bool(bb.get("enabled", True)),
-        forbidden_paths=tuple(str(x) for x in (bb.get("forbidden_paths") or ["/SANDIEGO", "/bricks"])),
+        forbidden_paths=tuple(str(x) for x in bb.get("forbidden_paths", ())),
     )
 
     vol_block = raw.get("gluster") or {}

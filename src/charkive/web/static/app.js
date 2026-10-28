@@ -153,6 +153,8 @@ function loadDashboard() {
 
       // Config summary
       var cfgEl = document.getElementById('config-summary');
+      var heroRoot = document.getElementById('hero-root');
+      if (heroRoot) heroRoot.textContent = data.config_root;
       cfgEl.innerHTML =
         '<div class="stat-row"><span class="stat-label">Root</span><span class="stat-value" style="font-size:0.78rem">' + escHtml(data.config_root) + '</span></div>' +
         '<div class="stat-row"><span class="stat-label">Sandbox</span><span class="stat-value ' + (data.sandbox ? 'green' : '') + '">' + (data.sandbox ? 'Enabled' : 'Disabled') + '</span></div>' +
@@ -162,6 +164,12 @@ function loadDashboard() {
 
       // Recent artifacts
       loadRecentArtifacts(data.latest_scan);
+      var cleanupResult = document.getElementById('cleanup-result');
+      if (cleanupResult) {
+        cleanupResult.textContent = data.latest_scan
+          ? 'Scan #' + data.latest_scan.id + ' is ready for preview.'
+          : 'Run a scan first. Preview and quarantine stay disabled until a scan exists.';
+      }
     })
     .catch(function (err) {
       showToast('Failed to load dashboard: ' + err, 'error');
@@ -171,6 +179,76 @@ function loadDashboard() {
 function pctOf(a, b) {
   if (!b) return 0;
   return Math.round((a / b) * 100);
+}
+
+function selectedCleanupTier() {
+  return document.getElementById('cleanup-tier').value || null;
+}
+
+function cleanupRequest(dryRun, confirmation) {
+  var payload = { tier: selectedCleanupTier(), dry_run: dryRun };
+  if (confirmation) payload.confirmation = confirmation;
+  return fetch('/api/sanitise', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  }).then(function (response) {
+    return response.json().then(function (data) {
+      if (!response.ok) throw new Error(data.detail || 'Request failed');
+      return data;
+    });
+  });
+}
+
+function previewSanitise() {
+  var result = document.getElementById('cleanup-result');
+  result.textContent = 'Checking the latest scan...';
+  cleanupRequest(true).then(function (data) {
+    result.textContent = 'Preview: ' + plural(data.staged, 'file') + ' · about ' + data.moved_fmt +
+      ' would move into the SANitorium. Nothing has moved.';
+  }).catch(function (err) {
+    result.textContent = 'Preview blocked: ' + err.message;
+    showToast('Preview blocked: ' + err.message, 'error');
+  });
+}
+
+function runSanitise() {
+  var tier = selectedCleanupTier();
+  var confirmation = null;
+  var phraseByTier = { megashyte: 'MEGASHYTE', gigashyte: 'THESE GO TO ELEVEN' };
+  var tierOrder = ['shyte', 'kiloshyte', 'megashyte', 'gigashyte'];
+  var confirmTier = tier;
+  if (!confirmTier) {
+    fetch('/api/status').then(function (response) { return response.json(); }).then(function (status) {
+      var tiers = status.latest_scan && status.latest_scan.summary ? status.latest_scan.summary.by_tier : {};
+      confirmTier = tierOrder.filter(function (name) { return tiers[name] && tiers[name].files > 0; }).pop() || null;
+      askToSanitise(confirmTier, phraseByTier);
+    }).catch(function (err) { showToast('Could not check scan tiers: ' + err.message, 'error'); });
+    return;
+  }
+  askToSanitise(confirmTier, phraseByTier);
+}
+
+function askToSanitise(tier, phraseByTier) {
+  var confirmation = null;
+  var phrase = phraseByTier[tier];
+  if (phrase) {
+    confirmation = window.prompt('This tier needs explicit confirmation. Type: ' + phrase);
+    if (confirmation === null) return;
+  } else if (!window.confirm('Move the selected scan candidates into the SANitorium? They will remain recoverable.')) {
+    return;
+  }
+  var result = document.getElementById('cleanup-result');
+  result.textContent = 'Moving candidates into the SANitorium...';
+  cleanupRequest(false, confirmation).then(function (data) {
+    result.textContent = 'Quarantined ' + plural(data.staged, 'file') + ' · ' + data.moved_fmt +
+      ' moved. Restore them from the SANitorium if needed.';
+    showToast('Files moved to the SANitorium', 'success');
+    loadDashboard();
+  }).catch(function (err) {
+    result.textContent = 'Quarantine blocked: ' + err.message;
+    showToast('Quarantine blocked: ' + err.message, 'error');
+  });
 }
 
 function escHtml(s) {

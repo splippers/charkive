@@ -2,6 +2,26 @@
 {% block title %}Dashboard{% endblock %}
 {% block heading %}Dashboard{% endblock %}
 {% block content %}
+<section class="hero-panel">
+  <div class="hero-copy">
+    <span class="eyebrow"><span class="eyebrow-dot"></span> STORAGE CURATION / NOT A DISK CLEANER</span>
+    <h2>Keep the masters.<br><span>Burn the fluff.</span></h2>
+    <p>See what matched, why it matched, and which paths are protected. Preview moves, then quarantine; nothing is deleted.</p>
+    <div class="hero-actions">
+      <button class="btn btn-primary btn-large" id="btn-scan" onclick="runScan()">&#x25B6; Scan this disk</button>
+      <a class="btn btn-outline btn-large" href="/sanitorium">Open SANitorium <span aria-hidden="true">&rarr;</span></a>
+    </div>
+    <div class="hero-workflow"><span>01&nbsp; SCAN</span><i></i><span>02&nbsp; REVIEW</span><i></i><span>03&nbsp; QUARANTINE</span><i></i><span>04&nbsp; RESTORE</span></div>
+  </div>
+  <div class="hero-art" aria-hidden="true">
+    <div class="orbit orbit-one"></div><div class="orbit orbit-two"></div>
+    <div class="disk-graphic"><span class="disk-ring"></span><span class="disk-core">&#x2726;</span></div>
+    <span class="spark spark-one"></span><span class="spark spark-two"></span><span class="spark spark-three"></span>
+    <span class="hero-art-label">SAN / READY</span>
+  </div>
+  <div class="hero-foot"><span>ACTIVE ROOT</span><code id="hero-root">Loading configured disk...</code><span class="hero-foot-note">Local, removable or Gluster mount</span></div>
+</section>
+
 <div class="overview-grid" id="overview-grid">
   <div class="card scan-card">
     <div class="card-header">Latest Scan</div>
@@ -9,7 +29,6 @@
       <div class="spinner"></div>
     </div>
     <div class="card-actions">
-      <button class="btn btn-primary" id="btn-scan" onclick="runScan()">&#x21bb; Run Scan</button>
       <button class="btn btn-outline" id="btn-view-scans" onclick="location.href='/scans'">View All Scans</button>
     </div>
   </div>
@@ -34,6 +53,32 @@
       <div class="spinner"></div>
     </div>
   </div>
+</div>
+
+<div class="card cleanup-card">
+  <div class="card-header">
+    <span><span class="header-icon">&#x2726;</span> Quarantine candidates</span>
+    <span class="tag tag-protect">Recoverable</span>
+  </div>
+  <div class="cleanup-body">
+    <div>
+      <h3>Ready when you are.</h3>
+      <p>Preview rule-matched files before moving them. Nothing is permanently deleted.</p>
+    </div>
+    <div class="cleanup-controls">
+      <label class="sr-only" for="cleanup-tier">Tier to quarantine</label>
+      <select id="cleanup-tier">
+        <option value="">All tiers</option>
+        <option value="shyte">Shyte · 1</option>
+        <option value="kiloshyte">Kiloshyte · 5</option>
+        <option value="megashyte">Megashyte · 10</option>
+        <option value="gigashyte">Gigashyte · 11</option>
+      </select>
+      <button class="btn btn-outline" onclick="previewSanitise()">Preview moves</button>
+      <button class="btn btn-danger" onclick="runSanitise()">Quarantine files</button>
+    </div>
+  </div>
+  <div id="cleanup-result" class="cleanup-result" role="status" aria-live="polite">A fresh scan is required before cleanup.</div>
 </div>
 
 <div class="card" style="margin-top: 1.5rem;">
