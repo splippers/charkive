@@ -84,5 +84,5 @@ def test_quench_refuses_traversal_out_of_the_sanitorium(scanned):
 
 def test_quench_strips_leading_dots_so_it_cannot_start_outside(scanned):
     cfg, _conn, _scan_id = scanned
-    with pytest.raises(FileNotFoundError):
+    with pytest.raises(RuntimeError, match="Unsafe relative path"):
         quench(cfg, "../../etc/passwd")
