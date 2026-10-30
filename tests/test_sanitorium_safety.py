@@ -111,3 +111,44 @@ def test_sanitise_and_restore_reject_raw_brick_root(charkive_config, tmp_path):
         sanitorium.quench(charkive_config, "2026-W43/scratch.tmp")
 
     assert source.read_bytes() == b"untouched"
+
+
+def test_earlier_moves_are_journalled_when_a_later_move_fails(charkive_config, tmp_path, monkeypatch):
+    for name in ("a.tmp", "b.tmp"):
+        (tmp_path / name).write_bytes(b"data")
+    conn = sqlite3.connect(":memory:")
+    db.migrate(conn)
+    scan_id = db.start_scan(conn, tmp_path)
+    db.bulk_upsert_artifacts(
+        conn,
+        scan_id=scan_id,
+        batch=[
+            ("a.tmp", 4, 1.0, "candidate", "shyte", "scratch", None),
+            ("b.tmp", 4, 1.0, "candidate", "shyte", "scratch", None),
+        ],
+    )
+    conn.commit()
+
+    real_move = sanitorium._move_no_replace
+    calls = []
+
+    def flaky(src, dest):
+        calls.append(src.name)
+        if len(calls) == 2:
+            raise OSError(errno.EIO, "disk went away")
+        real_move(src, dest)
+
+    monkeypatch.setattr(sanitorium, "_move_no_replace", flaky)
+
+    with pytest.raises(OSError):
+        sanitorium.sanitise_moves(charkive_config, conn, scan_id=scan_id, tier=None, dry_run=False)
+
+    manifest = (
+        charkive_config.sanitorium_absolute() / sanitorium._iso_week_dir() / "manifest.ndjson"
+    ).read_text().splitlines()
+    assert len(manifest) == 1
+    assert '"from":"a.tmp"' in manifest[0] or '"from":"b.tmp"' in manifest[0]
+    states = dict(conn.execute("SELECT rel_path, status FROM artifacts").fetchall())
+    assert sorted(states.values()) == ["candidate", "quarantined"]
+    moved = next(p for p, st in states.items() if st == "quarantined")
+    assert not (tmp_path / moved).exists()
